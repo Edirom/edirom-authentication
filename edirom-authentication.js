@@ -323,7 +323,7 @@ class EdiromAuthentication extends HTMLElement {
     this._setError(this._accountError, '');
     this._setAuthRequestPending(true);
     try {
-      const response = await this._requestAuthentication({ action: 'logout', logout: 'true' });
+      const response = await this._requestAuthentication({ action: 'logout' });
       if (!response.loggedOut) throw new Error(response.message || 'Logout failed.');
 
       this._setLoggedIn(false);
