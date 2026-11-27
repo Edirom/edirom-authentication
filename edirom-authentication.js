@@ -143,7 +143,7 @@ class EdiromAuthentication extends HTMLElement {
       <div id="login-popover" popover="manual">
         <h1>Sign in</h1>
         <p id="keycloak-error" role="alert" hidden></p>
-        <button id="keycloak-login-button" type="button" hidden>
+        <button id="keycloak-login-button" type="button">
           <edirom-icon name="login" aria-hidden="true"></edirom-icon>
           <span>Sign in with Keycloak</span>
         </button>
