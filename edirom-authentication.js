@@ -6,9 +6,6 @@
  * @extends HTMLElement
  *
  * Events:
- * - `login-request`: emitted with the submitted username, password and remember choice.
- * - `logout-request`: emitted when logout is requested.
- * - `login-state-change`: emitted when the authenticated state changes.
  * - `keycloak-login-request`: emitted when Keycloak sign-in is requested.
  * - `keycloak-login-failed`: emitted when the Keycloak handler cannot start or sign-in is cancelled.
  * - `keycloak-user-state-change`: emitted when the frontend Keycloak username changes.
@@ -18,21 +15,16 @@
 class EdiromAuthentication extends HTMLElement {
 
   static get observedAttributes() {
-    return ['backend-url', 'keycloak-url', 'keycloak-realm', 'keycloak-client-id', 'keycloak-handler-src'];
+    return ['keycloak-url', 'keycloak-realm', 'keycloak-client-id', 'keycloak-handler-src'];
   }
 
   /** Creates the authenticator and initializes its controls. */
   constructor() {
     super();
 
-    this._isLoggedIn = false;
-    this._userName = 'Username not set';
     this._keycloakUserName = null;
-    this._authRequestPending = false;
     this._keycloakRequestPending = false;
     this._keycloakHandlerElement = null;
-    this._authenticationStatusRequested = false;
-    this._authenticationRequestQueue = Promise.resolve();
 
     this.attachShadow({ mode: 'open' });
     this.render();
@@ -41,21 +33,17 @@ class EdiromAuthentication extends HTMLElement {
     this._renderAccountState();
   }
 
-  /** Loads the current eXist-db session after this element receives its endpoint. */
+  /** Restores the display-only Keycloak identity and any pending redirect callback. */
   connectedCallback() {
-    this._loadAuthenticationState();
     this._loadKeycloakUserNameFromCookie();
     this._restoreKeycloakCallback();
   }
 
-  /** Loads the current session when the hosting application supplies its backend URL. */
+  /** Updates Keycloak controls when their configuration changes. */
   attributeChangedCallback(name, oldValue, newValue) {
-    if (name === 'backend-url' && oldValue !== newValue) {
-      this._authenticationStatusRequested = false;
-      this._loadAuthenticationState();
-    }
-    if (name.startsWith('keycloak-')) {
+    if (name.startsWith('keycloak-') && oldValue !== newValue) {
       this._renderKeycloakButton();
+      this._renderAccountState();
       if (this.isConnected && this._hasKeycloakConfiguration()) this._restoreKeycloakCallback();
     }
   }
@@ -105,33 +93,19 @@ class EdiromAuthentication extends HTMLElement {
           padding: 0.5rem;
         }
 
-        #login-form, #input-container { display: flex; flex-direction: column; }
-        #login-form { gap: 0.75rem; }
-        #input-container { gap: 0.5rem; }
-        #input-container > div { display: flex; flex-direction: column; gap: 0.25rem; }
-        #input-container input { box-sizing: border-box; width: 100%; }
-        #login-form h1 { margin: 0; font-size: 1.25rem; }
-        #remember-label {
-          display: flex;
-          align-items: center;
-          gap: 0.35rem;
-          cursor: pointer;
-        }
-
-        #remember-me { cursor: pointer; }
-
-        #account-name, #keycloak-account-name {
+        #login-popover h1 { margin: 0 0 0.75rem; font-size: 1.25rem; }
+        #keycloak-account-name {
           margin: 0 0.5rem 0.5rem;
           color: #222;
           font-weight: 600;
         }
 
-        #login-error, #account-error {
+        #keycloak-error {
           margin: 0;
           color: #a40000;
         }
 
-        #login-submit, #logout-button, #keycloak-login-button {
+        #keycloak-login-button {
           display: flex;
           align-items: center;
           justify-content: flex-start;
@@ -148,65 +122,35 @@ class EdiromAuthentication extends HTMLElement {
           cursor: pointer;
         }
 
-        #keycloak-login-button {
-          margin-top: 0.5rem;
-        }
-
-        #login-submit:hover, #logout-button:hover, #keycloak-login-button:hover,
-        #login-submit:focus-visible, #logout-button:focus-visible, #keycloak-login-button:focus-visible {
+        #keycloak-login-button:hover,
+        #keycloak-login-button:focus-visible {
           background: #e6e6e6;
         }
 
-        #login-submit edirom-icon, #logout-button edirom-icon, #keycloak-login-button edirom-icon {
+        #keycloak-login-button edirom-icon {
           width: 1.5rem;
           height: 1.5rem;
         }
       </style>
 
       <edirom-icon id="login-button" name="login" role="button" tabindex="0"
-        title="Login" aria-label="Login" aria-haspopup="true" aria-expanded="false"
+        title="Sign in with Keycloak" aria-label="Sign in with Keycloak" aria-haspopup="true" aria-expanded="false"
         aria-controls="login-popover"></edirom-icon>
       <edirom-icon id="account-button" name="account_circle" role="button" tabindex="0"
         title="Account" aria-label="Account menu" aria-haspopup="true" aria-expanded="false"
         aria-controls="account-popover" hidden></edirom-icon>
 
       <div id="login-popover" popover="manual">
-        <form id="login-form" novalidate>
-          <h1>Sign in</h1>
-          <p id="login-error" role="alert" hidden></p>
-          <div id="input-container">
-            <div>
-              <label for="username">Username</label>
-              <input id="username" type="text" name="username" autocomplete="username" placeholder="Enter username" required>
-            </div>
-            <div>
-              <label for="password">Password</label>
-              <input id="password" type="password" name="password" autocomplete="current-password" placeholder="Enter password" required>
-            </div>
-          </div>
-          <label id="remember-label" for="remember-me">
-            <input id="remember-me" type="checkbox" name="remember">
-            Remember me
-          </label>
-          <button id="login-submit" type="submit">
-            <edirom-icon name="login" aria-hidden="true"></edirom-icon>
-            <span>Login</span>
-          </button>
-          <button id="keycloak-login-button" type="button" hidden>
-            <edirom-icon name="login" aria-hidden="true"></edirom-icon>
-            <span>Sign in with Keycloak</span>
-          </button>
-        </form>
+        <h1>Sign in</h1>
+        <p id="keycloak-error" role="alert" hidden></p>
+        <button id="keycloak-login-button" type="button" hidden>
+          <edirom-icon name="login" aria-hidden="true"></edirom-icon>
+          <span>Sign in with Keycloak</span>
+        </button>
       </div>
 
       <div id="account-popover" popover="manual">
-        <p id="account-name"></p>
-        <p id="keycloak-account-name" hidden>Keycloak user: <span id="keycloak-user-name"></span></p>
-        <p id="account-error" role="alert" hidden></p>
-        <button id="logout-button" type="button">
-          <edirom-icon name="logout" aria-hidden="true"></edirom-icon>
-          <span>Logout</span>
-        </button>
+        <p id="keycloak-account-name">Keycloak user: <span id="keycloak-user-name"></span></p>
       </div>
     `;
   }
@@ -217,19 +161,13 @@ class EdiromAuthentication extends HTMLElement {
     this._accountButton = this.shadowRoot.querySelector('#account-button');
     this._loginPopover = this.shadowRoot.querySelector('#login-popover');
     this._accountPopover = this.shadowRoot.querySelector('#account-popover');
-    this._loginForm = this.shadowRoot.querySelector('#login-form');
-    this._rememberLabel = this.shadowRoot.querySelector('#remember-label');
-    this._loginSubmit = this.shadowRoot.querySelector('#login-submit');
     this._keycloakLoginButton = this.shadowRoot.querySelector('#keycloak-login-button');
-    this._logoutButton = this.shadowRoot.querySelector('#logout-button');
-    this._accountName = this.shadowRoot.querySelector('#account-name');
     this._keycloakAccountName = this.shadowRoot.querySelector('#keycloak-account-name');
     this._keycloakUserNameElement = this.shadowRoot.querySelector('#keycloak-user-name');
-    this._loginError = this.shadowRoot.querySelector('#login-error');
-    this._accountError = this.shadowRoot.querySelector('#account-error');
+    this._keycloakError = this.shadowRoot.querySelector('#keycloak-error');
   }
 
-  /** Adds event listeners to the buttons, form and popovers. */
+  /** Adds event listeners to the controls and popovers. */
   addEventListeners() {
     this._loginButton.addEventListener('click', () => {
       this._togglePopover(this._loginPopover, this._loginButton);
@@ -238,19 +176,7 @@ class EdiromAuthentication extends HTMLElement {
       this._togglePopover(this._accountPopover, this._accountButton);
     });
 
-    this._loginForm.addEventListener('submit', (event) => {
-      event.preventDefault();
-      this._handleLogin();
-    });
-    // The authenticator is hosted inside an Ext button; keep its click handler
-    // from cancelling the checkbox's native label activation.
-    this._rememberLabel.addEventListener('click', (event) => event.stopPropagation());
-    this._loginSubmit.addEventListener('click', (event) => {
-      event.preventDefault();
-      this._handleLogin();
-    });
     this._keycloakLoginButton.addEventListener('click', () => this._handleKeycloakLogin());
-    this._logoutButton.addEventListener('click', () => this._handleLogout());
 
     this._loginPopover.addEventListener('toggle', () => {
       this._dispatchComponentEvent('login-popover-toggle', {
@@ -303,52 +229,14 @@ class EdiromAuthentication extends HTMLElement {
     }));
   }
 
-  /** Sends credentials to eXist-db and updates the UI after authentication succeeds. */
-  async _handleLogin() {
-    if (this._authRequestPending) return;
-
-    const formData = new FormData(this._loginForm);
-    this._dispatchComponentEvent('login-request', {
-      username: formData.get('username'),
-      password: formData.get('password'),
-      remember: formData.get('remember') === 'on'
-    });
-
-    this._setError(this._loginError, '');
-    this._setAuthRequestPending(true);
-    try {
-      const response = await this._requestAuthentication({
-        action: 'login',
-        user: formData.get('username'),
-        password: formData.get('password'),
-        ...(formData.get('remember') === 'on' ? { remember: 'true' } : {})
-      });
-
-      if (!response.authenticated) {
-        throw new Error(response.message || 'The username or password was not accepted.');
-      }
-
-      this._setLoggedIn(true, response.userName);
-      this._loginForm.reset();
-      this._loginPopover.hidePopover();
-      this._dispatchComponentEvent('login-success', { userName: response.userName });
-    } catch (error) {
-      this._setError(this._loginError, error.message || 'Login failed.');
-      this._dispatchComponentEvent('login-failed', { message: error.message || 'Login failed.' });
-    } finally {
-      this.shadowRoot.querySelector('#password').value = '';
-      this._setAuthRequestPending(false);
-    }
-  }
-
   /** Starts Keycloak sign-in through the configured Edirom Keycloak handler. */
   async _handleKeycloakLogin() {
-    if (this._authRequestPending || this._keycloakRequestPending || this._keycloakHandlerElement) return;
-    this._setError(this._loginError, '');
+    if (this._keycloakRequestPending || this._keycloakHandlerElement) return;
+    this._setError(this._keycloakError, '');
 
     if (!this._hasKeycloakConfiguration()) {
       const message = 'Configure keycloak-url, keycloak-realm, and keycloak-client-id to enable Keycloak sign-in.';
-      this._setError(this._loginError, message);
+      this._setError(this._keycloakError, message);
       this._dispatchComponentEvent('keycloak-login-failed', { message });
       return;
     }
@@ -364,7 +252,7 @@ class EdiromAuthentication extends HTMLElement {
       await this._waitForKeycloakUserName();
     } catch (error) {
       const message = error.message || 'Could not start Keycloak sign-in.';
-      this._setError(this._loginError, message);
+      this._setError(this._keycloakError, message);
       this._dispatchComponentEvent('keycloak-login-failed', { message });
     } finally {
       this._setKeycloakRequestPending(false);
@@ -382,7 +270,7 @@ class EdiromAuthentication extends HTMLElement {
       if (pending) sessionStorage.removeItem(storageKey);
     } catch (error) {
       const message = error.message || 'Could not resume Keycloak sign-in.';
-      this._setError(this._loginError, message);
+      this._setError(this._keycloakError, message);
       this._dispatchComponentEvent('keycloak-login-failed', { message });
       return;
     }
@@ -391,7 +279,7 @@ class EdiromAuthentication extends HTMLElement {
     const callback = new URLSearchParams(window.location.search);
     if (callback.has('error')) {
       const message = 'Keycloak sign-in was not completed.';
-      this._setError(this._loginError, message);
+      this._setError(this._keycloakError, message);
       this._dispatchComponentEvent('keycloak-login-failed', { message });
       return;
     }
@@ -402,7 +290,7 @@ class EdiromAuthentication extends HTMLElement {
       await this._waitForKeycloakUserName();
     } catch (error) {
       const message = error.message || 'Could not resume Keycloak sign-in.';
-      this._setError(this._loginError, message);
+      this._setError(this._keycloakError, message);
       this._dispatchComponentEvent('keycloak-login-failed', { message });
     }
   }
@@ -534,93 +422,15 @@ class EdiromAuthentication extends HTMLElement {
     ].join(':');
   }
 
-  /** Keeps the optional Keycloak button and its disabled state in sync. */
+  /** Keeps the Keycloak button and its disabled state in sync. */
   _renderKeycloakButton() {
     if (!this._keycloakLoginButton) return;
-    this._keycloakLoginButton.hidden = !this._hasKeycloakConfiguration();
-    this._keycloakLoginButton.disabled = this._authRequestPending || this._keycloakRequestPending;
+    this._keycloakLoginButton.disabled = this._keycloakRequestPending;
   }
 
   /** Updates the pending state of the Keycloak action. */
   _setKeycloakRequestPending(isPending) {
     this._keycloakRequestPending = isPending;
-    this._renderKeycloakButton();
-  }
-
-  /** Requests that eXist-db end the current session before updating the UI. */
-  async _handleLogout() {
-    if (this._authRequestPending) return;
-    this._dispatchComponentEvent('logout-request', { userName: this._userName });
-
-    this._setError(this._accountError, '');
-    this._setAuthRequestPending(true);
-    try {
-      const response = await this._requestAuthentication({ action: 'logout', logout: 'true' });
-      if (!response.loggedOut) throw new Error(response.message || 'Logout failed.');
-
-      this._setLoggedIn(false);
-      this._accountPopover.hidePopover();
-      this._dispatchComponentEvent('logout-success');
-    } catch (error) {
-      this._setError(this._accountError, error.message || 'Logout failed.');
-      this._dispatchComponentEvent('logout-failed', { message: error.message || 'Logout failed.' });
-    } finally {
-      this._setAuthRequestPending(false);
-    }
-  }
-
-  /** Sends a form-encoded request to the authentication endpoint on the configured backend. */
-  _requestAuthentication(parameters) {
-    const queuedRequest = this._authenticationRequestQueue.then(() => this._sendAuthenticationRequest(parameters));
-    this._authenticationRequestQueue = queuedRequest.catch(() => undefined);
-    return queuedRequest;
-  }
-
-  /** Sends one request at a time because eXist persistent-login tokens rotate per request. */
-  async _sendAuthenticationRequest(parameters) {
-    const backendUrl = this.getAttribute('backend-url');
-    const endpoint = backendUrl && `${backendUrl.replace(/\/$/, '')}/api/authentication`;
-    if (!endpoint) throw new Error('The authentication endpoint has not been configured.');
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-      body: new URLSearchParams(parameters)
-    });
-
-    let result;
-    try {
-      result = await response.json();
-    } catch (_) {
-      throw new Error('The authentication endpoint returned an unreadable response.');
-    }
-
-    if (!response.ok && response.status !== 401) {
-      throw new Error(result.message || `Authentication request failed (${response.status}).`);
-    }
-    return result;
-  }
-
-  /** Reads the existing eXist-db session so the icon reflects the server state. */
-  async _loadAuthenticationState() {
-    if (this._authenticationStatusRequested || !this.isConnected || !this.getAttribute('backend-url')) return;
-    this._authenticationStatusRequested = true;
-    try {
-      const response = await this._requestAuthentication({ action: 'status' });
-      this._setLoggedIn(response.authenticated, response.userName || this._userName);
-    } catch (error) {
-      this._dispatchComponentEvent('authentication-status-error', {
-        message: error.message || 'Could not read the authentication status.'
-      });
-    }
-  }
-
-  /** Updates the pending state of both account actions. */
-  _setAuthRequestPending(isPending) {
-    this._authRequestPending = isPending;
-    this._loginSubmit.disabled = isPending;
-    this._logoutButton.disabled = isPending;
     this._renderKeycloakButton();
   }
 
@@ -630,42 +440,21 @@ class EdiromAuthentication extends HTMLElement {
     element.hidden = !message;
   }
 
-  /** Sets the current authentication state and updates the visible trigger. */
-  _setLoggedIn(isLoggedIn, userName = this._userName) {
-    const previousState = this._isLoggedIn;
-    this._isLoggedIn = Boolean(isLoggedIn);
-    this._userName = userName;
-    this._renderAccountState();
-
-    if (previousState !== this._isLoggedIn) {
-      this._dispatchComponentEvent('login-state-change', {
-        isLoggedIn: this._isLoggedIn,
-        userName: this._isLoggedIn ? this._userName : null
-      });
-    }
-  }
-
-  /** Updates the login and account triggers to match the current state. */
+  /** Shows the sign-in trigger or Keycloak account menu as appropriate. */
   _renderAccountState() {
-    this._loginButton.hidden = this._isLoggedIn;
-    this._accountButton.hidden = !this._isLoggedIn && !this._keycloakUserName;
-    this._accountName.textContent = this._isLoggedIn ? this._userName : '';
-    this._accountName.hidden = !this._isLoggedIn;
-    this._keycloakAccountName.hidden = !this._keycloakUserName;
+    const hasKeycloakUser = Boolean(this._keycloakUserName);
+    this._loginButton.hidden = hasKeycloakUser;
+    this._accountButton.hidden = !hasKeycloakUser;
+    this._keycloakAccountName.hidden = !hasKeycloakUser;
     this._keycloakUserNameElement.textContent = this._keycloakUserName || '';
-    this._logoutButton.hidden = !this._isLoggedIn;
     this._renderKeycloakButton();
 
-    if (this._isLoggedIn) {
-      const keycloakName = this._keycloakUserName ? `; Keycloak user ${this._keycloakUserName}` : '';
-      this._accountButton.setAttribute('title', this._userName);
-      this._accountButton.setAttribute('aria-label', `Account menu for ${this._userName}${keycloakName}`);
-    } else if (this._keycloakUserName) {
+    if (hasKeycloakUser) {
       this._accountButton.setAttribute('title', this._keycloakUserName);
       this._accountButton.setAttribute('aria-label', `Keycloak account for ${this._keycloakUserName}`);
     } else {
-      this._loginButton.setAttribute('title', 'Login');
-      this._loginButton.setAttribute('aria-label', 'Login');
+      this._loginButton.setAttribute('title', 'Sign in with Keycloak');
+      this._loginButton.setAttribute('aria-label', 'Sign in with Keycloak');
     }
   }
 }
